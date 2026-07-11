@@ -1,0 +1,120 @@
+{
+  "loan": {
+    "auc": 0.9324,
+    "accuracy": 0.9275,
+    "precision": 0.75,
+    "recall": 0.5745,
+    "f1": 0.6506,
+    "confusion_matrix": [
+      [
+        344,
+        9
+      ],
+      [
+        20,
+        27
+      ]
+    ],
+    "feature_importances": {
+      "age": 0.05232692201701795,
+      "income": 0.21710575282572,
+      "credit_score": 0.37308938133960495,
+      "loan_amount": 0.05462847199942717,
+      "employment_years": 0.10671109493686885,
+      "debt_to_income": 0.06971037482480413,
+      "num_credit_lines": 0.0344302118497102,
+      "missed_payments": 0.07458507533163464,
+      "education_num": 0.01741271487521217
+    },
+    "roc_points": [
+      {
+        "fpr": 0.0,
+        "tpr": 0.0
+      },
+      {
+        "fpr": 0.006,
+        "tpr": 0.319
+      },
+      {
+        "fpr": 0.011,
+        "tpr": 0.404
+      },
+      {
+        "fpr": 0.023,
+        "tpr": 0.489
+      },
+      {
+        "fpr": 0.031,
+        "tpr": 0.617
+      },
+      {
+        "fpr": 0.062,
+        "tpr": 0.681
+      },
+      {
+        "fpr": 0.102,
+        "tpr": 0.766
+      },
+      {
+        "fpr": 0.127,
+        "tpr": 0.83
+      },
+      {
+        "fpr": 0.232,
+        "tpr": 0.915
+      },
+      {
+        "fpr": 0.408,
+        "tpr": 0.957
+      },
+      {
+        "fpr": 0.924,
+        "tpr": 1.0
+      },
+      {
+        "fpr": 0.975,
+        "tpr": 1.0
+      }
+    ]
+  },
+  "fraud": {
+    "auc": 1.0,
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "confusion_matrix": [
+      [
+        357,
+        0
+      ],
+      [
+        0,
+        43
+      ]
+    ],
+    "feature_importances": {
+      "txn_amount": 0.14686550486278988,
+      "hour": 0.12929865328756426,
+      "distance_from_home": 0.28532651809249543,
+      "avg_daily_spend": 0.03501175165520129,
+      "num_txn_today": 0.3989874754934327,
+      "foreign_txn": 0.004510096608516453
+    },
+    "roc_points": [
+      {
+        "fpr": 0.0,
+        "tpr": 0.0
+      },
+      {
+        "fpr": 1.0,
+        "tpr": 1.0
+      }
+    ]
+  },
+  "dataset": {
+    "total_records": 2000,
+    "loan_approved_pct": 13.6,
+    "fraud_pct": 10.0
+  }
+}
