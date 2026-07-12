@@ -1,8 +1,9 @@
+
 """
 AI-Powered Financial Decision System
 Streamlit Web Application
 """
-
+ 
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -16,7 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import seaborn as sns
 from sklearn.metrics import roc_curve, auc
-
+ 
 # ─────────────────────────────────────────────
 # PAGE CONFIG
 # ─────────────────────────────────────────────
@@ -26,7 +27,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
+ 
 # ─────────────────────────────────────────────
 # CUSTOM CSS
 # ─────────────────────────────────────────────
@@ -35,7 +36,7 @@ st.markdown("""
     /* Main theme */
     .main { background-color: #0f172a; }
     .stApp { background-color: #0f172a; }
-
+ 
     /* Metric cards */
     .metric-card {
         background: linear-gradient(135deg, #1e293b, #0f172a);
@@ -47,7 +48,7 @@ st.markdown("""
     }
     .metric-value { font-size: 2rem; font-weight: 700; color: #38bdf8; }
     .metric-label { font-size: 0.85rem; color: #94a3b8; margin-top: 4px; }
-
+ 
     /* Section headers */
     .section-header {
         background: linear-gradient(90deg, #0ea5e9, #8b5cf6);
@@ -57,7 +58,7 @@ st.markdown("""
         font-weight: 700;
         margin-bottom: 15px;
     }
-
+ 
     /* Approval badge */
     .badge-approved {
         background: #065f46; color: #6ee7b7;
@@ -75,17 +76,17 @@ st.markdown("""
         background: #065f46; color: #6ee7b7;
         padding: 6px 16px; border-radius: 20px; font-weight: 700;
     }
-
+ 
     /* Info box */
     .info-box {
         background: #1e293b; border-left: 4px solid #0ea5e9;
         padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 10px 0;
         color: #e2e8f0;
     }
-
+ 
     /* Risk bar */
     .risk-bar-container { background: #1e293b; border-radius: 8px; height: 12px; margin: 8px 0; }
-
+ 
     /* Login box */
     .login-container {
         max-width: 420px; margin: 80px auto;
@@ -112,7 +113,7 @@ st.markdown("""
     .stError { background: #7f1d1d; }
 </style>
 """, unsafe_allow_html=True)
-
+ 
 # ─────────────────────────────────────────────
 # SESSION STATE INIT
 # ─────────────────────────────────────────────
@@ -126,27 +127,99 @@ if "logged_in" not in st.session_state:
     }
     st.session_state.loan_results = None
     st.session_state.fraud_results = None
-
+ 
 # ─────────────────────────────────────────────
 # MODEL LOADING
 # ─────────────────────────────────────────────
 BASE = os.path.dirname(__file__)
-
+ 
 @st.cache_resource
 def load_models():
+    import numpy as np
+    import pandas as pd
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import train_test_split
+    from sklearn.metrics import roc_auc_score, confusion_matrix, roc_curve, classification_report
+ 
     m = os.path.join(BASE, "models")
-    return {
-        "loan_model": joblib.load(f"{m}/loan_model.pkl"),
-        "loan_scaler": joblib.load(f"{m}/loan_scaler.pkl"),
-        "fraud_model": joblib.load(f"{m}/fraud_model.pkl"),
-        "fraud_scaler": joblib.load(f"{m}/fraud_scaler.pkl"),
+    os.makedirs(m, exist_ok=True)
+    os.makedirs(os.path.join(BASE, "data"), exist_ok=True)
+ 
+    np.random.seed(42)
+    n = 5000
+    credit_score = np.random.randint(300, 850, n)
+    income = np.random.randint(20000, 150000, n)
+    employment_years = np.random.randint(0, 30, n)
+    missed_payments = np.random.randint(0, 10, n)
+    debt_to_income = np.round(np.random.uniform(0.05, 0.60, n), 2)
+    age = np.random.randint(22, 65, n)
+    loan_amount = np.random.randint(5000, 100000, n)
+    num_credit_lines = np.random.randint(1, 15, n)
+    education = np.random.choice(["High School","Bachelor","Master","PhD"], n)
+    edu_map = {"High School": 0, "Bachelor": 1, "Master": 2, "PhD": 3}
+    edu_num = np.array([edu_map[e] for e in education])
+    approved = ((credit_score >= 650) & (income >= 40000) & (missed_payments <= 2) & (debt_to_income <= 0.45)).astype(int)
+    noise_idx = np.random.choice(n, int(n*0.05), replace=False)
+    approved[noise_idx] = 1 - approved[noise_idx]
+    loan_df = pd.DataFrame({"age":age,"income":income,"credit_score":credit_score,"loan_amount":loan_amount,"employment_years":employment_years,"debt_to_income":debt_to_income,"num_credit_lines":num_credit_lines,"missed_payments":missed_payments,"education":education,"education_num":edu_num,"loan_approved":approved})
+    loan_df.to_csv(os.path.join(BASE, "data", "sample_loan_data.csv"), index=False)
+ 
+    loan_features = ["age","income","credit_score","loan_amount","employment_years","debt_to_income","num_credit_lines","missed_payments","education_num"]
+    X_loan = loan_df[loan_features]; y_loan = loan_df["loan_approved"]
+    X_tr,X_te,y_tr,y_te = train_test_split(X_loan,y_loan,test_size=0.2,random_state=42,stratify=y_loan)
+    scaler_loan = StandardScaler()
+    rf_loan = RandomForestClassifier(n_estimators=200, max_depth=12, random_state=42)
+    rf_loan.fit(scaler_loan.fit_transform(X_tr), y_tr)
+    lp = rf_loan.predict_proba(scaler_loan.transform(X_te))[:,1]
+    loan_auc = roc_auc_score(y_te, lp)
+    loan_pred = rf_loan.predict(scaler_loan.transform(X_te))
+    loan_cm = confusion_matrix(y_te, loan_pred).tolist()
+    loan_rep = classification_report(y_te, loan_pred, output_dict=True)
+    loan_imp = dict(zip(loan_features, rf_loan.feature_importances_.tolist()))
+ 
+    n_legit, n_fraud = 1800, 200
+    legit = pd.DataFrame({"txn_amount":np.random.exponential(150,n_legit).clip(1,2000),"hour":np.random.randint(8,22,n_legit),"distance_from_home":np.random.exponential(15,n_legit).clip(0,100),"avg_daily_spend":np.random.randint(100,400,n_legit),"num_txn_today":np.random.randint(1,8,n_legit),"foreign_txn":np.random.choice([0,1],n_legit,p=[0.97,0.03]),"is_fraud":0})
+    fraud = pd.DataFrame({"txn_amount":np.random.exponential(800,n_fraud).clip(200,10000),"hour":np.random.choice(list(range(0,6))+list(range(22,24)),n_fraud),"distance_from_home":np.random.exponential(200,n_fraud).clip(100,1000),"avg_daily_spend":np.random.randint(50,200,n_fraud),"num_txn_today":np.random.randint(10,30,n_fraud),"foreign_txn":np.random.choice([0,1],n_fraud,p=[0.4,0.6]),"is_fraud":1})
+    fraud_df = pd.concat([legit,fraud],ignore_index=True).sample(frac=1,random_state=42).reset_index(drop=True)
+    fraud_df.to_csv(os.path.join(BASE, "data", "sample_fraud_data.csv"), index=False)
+ 
+    fraud_features = ["txn_amount","hour","distance_from_home","avg_daily_spend","num_txn_today","foreign_txn"]
+    X_fraud = fraud_df[fraud_features]; y_fraud = fraud_df["is_fraud"]
+    X_tr2,X_te2,y_tr2,y_te2 = train_test_split(X_fraud,y_fraud,test_size=0.2,random_state=42)
+    scaler_fraud = StandardScaler()
+    rf_fraud = RandomForestClassifier(n_estimators=150, max_depth=8, random_state=42, class_weight="balanced")
+    rf_fraud.fit(scaler_fraud.fit_transform(X_tr2), y_tr2)
+    fp = rf_fraud.predict_proba(scaler_fraud.transform(X_te2))[:,1]
+    fraud_auc = roc_auc_score(y_te2, fp)
+    fraud_pred = rf_fraud.predict(scaler_fraud.transform(X_te2))
+    fraud_cm = confusion_matrix(y_te2, fraud_pred).tolist()
+    fraud_rep = classification_report(y_te2, fraud_pred, output_dict=True)
+    fraud_imp = dict(zip(fraud_features, rf_fraud.feature_importances_.tolist()))
+ 
+    fpr,tpr,_ = roc_curve(y_te,lp)
+    loan_roc=[{"fpr":round(float(f),3),"tpr":round(float(t),3)} for f,t in zip(fpr[::5],tpr[::5])]
+    fpr2,tpr2,_ = roc_curve(y_te2,fp)
+    fraud_roc=[{"fpr":round(float(f),3),"tpr":round(float(t),3)} for f,t in zip(fpr2[::5],tpr2[::5])]
+ 
+    def gm(rep,key):
+        for k in [str(key),key,"1",1]:
+            if k in rep and isinstance(rep[k],dict): return rep[k]
+        return {}
+ 
+    metrics = {
+        "loan":{"auc":round(loan_auc,4),"accuracy":round(loan_rep["accuracy"],4),"precision":round(gm(loan_rep,1).get("precision",0),4),"recall":round(gm(loan_rep,1).get("recall",0),4),"f1":round(gm(loan_rep,1).get("f1-score",0),4),"confusion_matrix":loan_cm,"feature_importances":loan_imp,"roc_points":loan_roc},
+        "fraud":{"auc":round(fraud_auc,4),"accuracy":round(fraud_rep["accuracy"],4),"precision":round(gm(fraud_rep,1).get("precision",0),4),"recall":round(gm(fraud_rep,1).get("recall",0),4),"f1":round(gm(fraud_rep,1).get("f1-score",0),4),"confusion_matrix":fraud_cm,"feature_importances":fraud_imp,"roc_points":fraud_roc},
+        "dataset":{"total_records":len(loan_df),"loan_approved_pct":round(loan_df["loan_approved"].mean()*100,1),"fraud_pct":round(fraud_df["is_fraud"].mean()*100,1)}
     }
-
+    with open(os.path.join(m,"metrics.json"),"w") as f: json.dump(metrics,f,indent=2)
+ 
+    return {"loan_model":rf_loan,"loan_scaler":scaler_loan,"fraud_model":rf_fraud,"fraud_scaler":scaler_fraud,"metrics":metrics}
+ 
 @st.cache_data
 def load_metrics():
-    with open(os.path.join(BASE, "models", "metrics.json")) as f:
-        return json.load(f)
-
+    return load_models()["metrics"]
+ 
 # ─────────────────────────────────────────────
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────────
@@ -154,7 +227,7 @@ def risk_label(prob):
     if prob < 0.3: return "🟢 Low Risk"
     elif prob < 0.6: return "🟡 Medium Risk"
     else: return "🔴 High Risk"
-
+ 
 def get_loan_recommendation(prob, row):
     recs = []
     if row.get("missed_payments", 0) > 3:
@@ -170,7 +243,7 @@ def get_loan_recommendation(prob, row):
     if not recs:
         recs.append("• Maintain current financial habits")
     return recs
-
+ 
 def get_fraud_recommendation(prob, row):
     recs = []
     if row.get("foreign_txn", 0):
@@ -186,7 +259,7 @@ def get_fraud_recommendation(prob, row):
     else:
         recs.append("• Transaction appears legitimate")
     return recs
-
+ 
 def clean_loan_data(df):
     required = ['age','income','credit_score','loan_amount','employment_years',
                 'debt_to_income','num_credit_lines','missed_payments','education']
@@ -205,7 +278,7 @@ def clean_loan_data(df):
     edu_map = {'high school': 0, 'bachelor': 1, 'master': 2, 'phd': 3}
     df['education_num'] = df['education'].str.lower().map(edu_map).fillna(1)
     return df, None
-
+ 
 def clean_fraud_data(df):
     required = ['txn_amount','hour','distance_from_home','avg_daily_spend','num_txn_today','foreign_txn']
     missing = [c for c in required if c not in df.columns]
@@ -216,7 +289,7 @@ def clean_fraud_data(df):
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
     df['foreign_txn'] = df['foreign_txn'].clip(0, 1)
     return df, None
-
+ 
 def make_confusion_matrix_fig(cm, title):
     fig, ax = plt.subplots(figsize=(4, 3.5), facecolor='#1e293b')
     ax.set_facecolor('#1e293b')
@@ -229,7 +302,7 @@ def make_confusion_matrix_fig(cm, title):
     ax.tick_params(colors='#94a3b8', labelsize=8)
     plt.tight_layout()
     return fig
-
+ 
 def make_roc_fig(roc_pts, auc_val, title):
     fig, ax = plt.subplots(figsize=(4, 3.5), facecolor='#1e293b')
     ax.set_facecolor('#1e293b')
@@ -248,7 +321,7 @@ def make_roc_fig(roc_pts, auc_val, title):
     ax.spines['right'].set_color('#334155')
     plt.tight_layout()
     return fig
-
+ 
 def make_feature_importance_fig(importances, title):
     sorted_items = sorted(importances.items(), key=lambda x: x[1], reverse=True)
     labels = [k.replace('_', ' ').title() for k, v in sorted_items]
@@ -266,7 +339,7 @@ def make_feature_importance_fig(importances, title):
     ax.spines['right'].set_visible(False)
     plt.tight_layout()
     return fig
-
+ 
 # ─────────────────────────────────────────────
 # LOGIN PAGE
 # ─────────────────────────────────────────────
@@ -281,12 +354,12 @@ def login_page():
             <p style='color:#64748b; font-size:0.9rem;'>Powered by Machine Learning</p>
         </div>
         """, unsafe_allow_html=True)
-
+ 
         with st.form("login_form"):
             username = st.text_input("👤 Username", placeholder="admin / analyst / demo")
             password = st.text_input("🔒 Password", type="password", placeholder="Enter password")
             submitted = st.form_submit_button("Sign In →", use_container_width=True)
-
+ 
             if submitted:
                 users = st.session_state.users
                 if username in users and users[username]["password"] == password:
@@ -297,13 +370,13 @@ def login_page():
                     st.rerun()
                 else:
                     st.error("Invalid credentials. Try: admin/admin123")
-
+ 
         st.markdown("""
         <div style='text-align:center; margin-top:20px; color:#475569; font-size:0.8rem;'>
         <b>Demo Accounts:</b> admin/admin123 · analyst/analyst123 · demo/demo
         </div>
         """, unsafe_allow_html=True)
-
+ 
 # ─────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────
@@ -317,7 +390,7 @@ def render_sidebar():
             </div>
         </div>
         """, unsafe_allow_html=True)
-
+ 
         page = st.radio("📍 Navigation", [
             "📊 Dashboard",
             "💳 Loan Approval",
@@ -327,7 +400,7 @@ def render_sidebar():
             "📈 Model Performance",
             "ℹ️ About"
         ], label_visibility="collapsed")
-
+ 
         st.markdown("---")
         st.markdown("""
         <div style='color:#475569; font-size:0.75rem; text-align:center;'>
@@ -336,13 +409,13 @@ def render_sidebar():
         AUC: 0.93+ (Loan) | 0.99+ (Fraud)
         </div>
         """, unsafe_allow_html=True)
-
+ 
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
-
+ 
         return page
-
+ 
 # ─────────────────────────────────────────────
 # PAGES
 # ─────────────────────────────────────────────
@@ -350,7 +423,7 @@ def page_dashboard():
     metrics = load_metrics()
     st.markdown("<h1 style='color:#e2e8f0;'>📊 Executive Dashboard</h1>", unsafe_allow_html=True)
     st.markdown(f"<p style='color:#64748b;'>Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>", unsafe_allow_html=True)
-
+ 
     # KPI Row
     cols = st.columns(4)
     kpis = [
@@ -366,9 +439,9 @@ def page_dashboard():
             <div class='metric-label'>{label}</div>
         </div>
         """, unsafe_allow_html=True)
-
+ 
     st.markdown("<br>", unsafe_allow_html=True)
-
+ 
     # Charts row 1
     c1, c2 = st.columns(2)
     with c1:
@@ -394,7 +467,7 @@ def page_dashboard():
         plt.tight_layout()
         st.pyplot(fig)
         plt.close()
-
+ 
     with c2:
         st.markdown("**🏦 Key Financial Indicators**")
         fig2, ax2 = plt.subplots(figsize=(5, 3.5), facecolor='#1e293b')
@@ -414,7 +487,7 @@ def page_dashboard():
         plt.tight_layout()
         st.pyplot(fig2)
         plt.close()
-
+ 
     # ROC curves
     c3, c4 = st.columns(2)
     with c3:
@@ -423,13 +496,13 @@ def page_dashboard():
     with c4:
         fig4 = make_roc_fig(metrics['fraud']['roc_points'], metrics['fraud']['auc'], 'Fraud Model — ROC Curve')
         st.pyplot(fig4); plt.close()
-
-
+ 
+ 
 def page_loan():
     models = load_models()
     st.markdown("<h1 style='color:#e2e8f0;'>💳 Loan Approval Prediction</h1>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748b;'>Enter customer details to predict loan approval using Random Forest model</p>", unsafe_allow_html=True)
-
+ 
     with st.form("loan_form"):
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -444,9 +517,9 @@ def page_loan():
             num_credit_lines = st.number_input("Credit Lines", 1, 20, 4)
             missed_payments = st.number_input("Missed Payments (last 2yr)", 0, 20, 0)
             education = st.selectbox("Education", ["High School","Bachelor","Master","PhD"])
-
+ 
         submitted = st.form_submit_button("🔍 Predict Loan Approval", use_container_width=True)
-
+ 
     if submitted:
         edu_map = {'High School': 0, 'Bachelor': 1, 'Master': 2, 'PhD': 3}
         features = np.array([[age, income, credit_score, loan_amount, employment_years,
@@ -455,7 +528,7 @@ def page_loan():
         prob = models['loan_model'].predict_proba(features_scaled)[0][1]
         decision = "APPROVED ✅" if prob >= 0.5 else "REJECTED ❌"
         badge_cls = "badge-approved" if prob >= 0.5 else "badge-rejected"
-
+ 
         st.markdown("---")
         col_r1, col_r2 = st.columns([1, 2])
         with col_r1:
@@ -470,7 +543,7 @@ def page_loan():
                 <div style='margin-top:10px; color:#64748b; font-size:0.8rem;'>{risk_label(1-prob if prob>=0.5 else prob)}</div>
             </div>
             """, unsafe_allow_html=True)
-
+ 
         with col_r2:
             st.markdown("**📋 AI Recommendations**")
             row = {'missed_payments': missed_payments, 'debt_to_income': debt_to_income,
@@ -478,7 +551,7 @@ def page_loan():
             recs = get_loan_recommendation(prob, row)
             for r in recs:
                 st.markdown(f"<div class='info-box'>{r}</div>", unsafe_allow_html=True)
-
+ 
             # Risk gauge bar
             st.markdown("**📊 Risk Score Visualization**")
             fig_g, ax_g = plt.subplots(figsize=(5, 1.5), facecolor='#1e293b')
@@ -492,13 +565,13 @@ def page_loan():
             ax_g.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#e2e8f0', fontsize=7)
             plt.tight_layout()
             st.pyplot(fig_g); plt.close()
-
-
+ 
+ 
 def page_fraud():
     models = load_models()
     st.markdown("<h1 style='color:#e2e8f0;'>🔐 Real-Time Fraud Detection</h1>", unsafe_allow_html=True)
     st.markdown("<p style='color:#64748b;'>Analyze transactions using Gradient Boosting model</p>", unsafe_allow_html=True)
-
+ 
     with st.form("fraud_form"):
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -510,16 +583,16 @@ def page_fraud():
         with c3:
             num_txn_today = st.number_input("# Transactions Today", 1, 50, 3)
             foreign_txn = st.selectbox("International Transaction?", [0, 1], format_func=lambda x: "Yes" if x else "No")
-
+ 
         submitted = st.form_submit_button("🔍 Analyze Transaction", use_container_width=True)
-
+ 
     if submitted:
         features = np.array([[txn_amount, hour, distance_from_home, avg_daily_spend, num_txn_today, foreign_txn]])
         features_scaled = models['fraud_scaler'].transform(features)
         prob = models['fraud_model'].predict_proba(features_scaled)[0][1]
         is_fraud = prob >= 0.5
         decision = "⚠️ FRAUD DETECTED" if is_fraud else "✅ LEGITIMATE"
-
+ 
         st.markdown("---")
         col_r1, col_r2 = st.columns([1, 2])
         with col_r1:
@@ -534,7 +607,7 @@ def page_fraud():
                 <div style='margin-top:10px; color:#64748b; font-size:0.8rem;'>{risk_label(prob)}</div>
             </div>
             """, unsafe_allow_html=True)
-
+ 
         with col_r2:
             st.markdown("**🔍 Risk Factors**")
             row = {'foreign_txn': foreign_txn, 'distance_from_home': distance_from_home,
@@ -543,7 +616,7 @@ def page_fraud():
             for r in recs:
                 color = "#7f1d1d" if is_fraud else "#064e3b"
                 st.markdown(f"<div class='info-box' style='border-color:{"#f87171" if is_fraud else "#6ee7b7"};'>{r}</div>", unsafe_allow_html=True)
-
+ 
             # Speedometer-style chart
             fig_s, ax_s = plt.subplots(figsize=(5, 2), facecolor='#1e293b')
             ax_s.set_facecolor('#1e293b')
@@ -556,14 +629,14 @@ def page_fraud():
             ax_s.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#e2e8f0', fontsize=9)
             plt.tight_layout()
             st.pyplot(fig_s); plt.close()
-
-
+ 
+ 
 def page_bulk_upload():
     models = load_models()
     st.markdown("<h1 style='color:#e2e8f0;'>📂 Bulk CSV Upload & Prediction</h1>", unsafe_allow_html=True)
-
+ 
     tab1, tab2 = st.tabs(["💳 Loan Predictions", "🔐 Fraud Predictions"])
-
+ 
     with tab1:
         st.markdown("""
         <div class='info-box'>
@@ -571,18 +644,18 @@ def page_bulk_upload():
         debt_to_income, num_credit_lines, missed_payments, education
         </div>
         """, unsafe_allow_html=True)
-
+ 
         # Download template
         sample_loan = pd.read_csv(os.path.join(BASE, 'data', 'sample_loan_data.csv')).head(5)
         csv_bytes = sample_loan.to_csv(index=False).encode()
         st.download_button("📥 Download Sample Loan CSV", csv_bytes, "sample_loan.csv", "text/csv")
-
+ 
         uploaded = st.file_uploader("Upload Loan CSV", type=['csv'], key='loan_upload')
         if uploaded:
             df = pd.read_csv(uploaded)
             st.markdown(f"**Uploaded:** {len(df)} rows, {len(df.columns)} columns")
             st.dataframe(df.head(5), use_container_width=True)
-
+ 
             # Clean
             with st.spinner("🧹 Cleaning data..."):
                 cleaned, err = clean_loan_data(df)
@@ -598,11 +671,11 @@ def page_bulk_upload():
                     cleaned['approval_probability'] = probs.round(4)
                     cleaned['decision'] = ['APPROVED' if p >= 0.5 else 'REJECTED' for p in probs]
                     cleaned['risk_level'] = [risk_label(1-p if p>=0.5 else p) for p in probs]
-
+ 
                 st.markdown("**📊 Results Preview**")
                 result_cols = ['age','income','credit_score','loan_amount','approval_probability','decision','risk_level']
                 st.dataframe(cleaned[[c for c in result_cols if c in cleaned.columns]].head(20), use_container_width=True)
-
+ 
                 # Summary chart
                 fig_pie, ax_pie = plt.subplots(figsize=(4, 3.5), facecolor='#1e293b')
                 ax_pie.set_facecolor('#1e293b')
@@ -612,29 +685,29 @@ def page_bulk_upload():
                            textprops={'color':'#e2e8f0', 'fontsize':9})
                 ax_pie.set_title('Approval Distribution', color='#e2e8f0', fontsize=11)
                 st.pyplot(fig_pie); plt.close()
-
+ 
                 # Download results
                 result_csv = cleaned.to_csv(index=False).encode()
                 st.download_button("📥 Download Results CSV", result_csv, "loan_predictions.csv", "text/csv")
                 st.session_state.loan_results = cleaned
-
+ 
     with tab2:
         st.markdown("""
         <div class='info-box'>
         <b>Required columns:</b> txn_amount, hour, distance_from_home, avg_daily_spend, num_txn_today, foreign_txn
         </div>
         """, unsafe_allow_html=True)
-
+ 
         sample_fraud = pd.read_csv(os.path.join(BASE, 'data', 'sample_fraud_data.csv')).head(5)
         csv_bytes2 = sample_fraud.to_csv(index=False).encode()
         st.download_button("📥 Download Sample Fraud CSV", csv_bytes2, "sample_fraud.csv", "text/csv")
-
+ 
         uploaded2 = st.file_uploader("Upload Transaction CSV", type=['csv'], key='fraud_upload')
         if uploaded2:
             df2 = pd.read_csv(uploaded2)
             st.markdown(f"**Uploaded:** {len(df2)} rows")
             st.dataframe(df2.head(5), use_container_width=True)
-
+ 
             cleaned2, err2 = clean_fraud_data(df2)
             if err2:
                 st.error(f"Data issue: {err2}")
@@ -647,20 +720,20 @@ def page_bulk_upload():
                 cleaned2['fraud_probability'] = probs2.round(4)
                 cleaned2['verdict'] = ['FRAUD' if p >= 0.5 else 'LEGITIMATE' for p in probs2]
                 cleaned2['risk_level'] = [risk_label(p) for p in probs2]
-
+ 
                 st.dataframe(cleaned2.head(20), use_container_width=True)
                 result_csv2 = cleaned2.to_csv(index=False).encode()
                 st.download_button("📥 Download Results CSV", result_csv2, "fraud_predictions.csv", "text/csv")
                 st.session_state.fraud_results = cleaned2
-
-
+ 
+ 
 def page_individual():
     st.markdown("<h1 style='color:#e2e8f0;'>👤 Individual Customer Risk Analysis</h1>", unsafe_allow_html=True)
     models = load_models()
-
+ 
     customer_id = st.text_input("Customer ID / Name", "CUST-2024-001")
     st.markdown("---")
-
+ 
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("**💳 Loan Profile**")
@@ -673,7 +746,7 @@ def page_individual():
         num_credit_lines = st.number_input("Credit Lines", 1, 20, 5, key='ind_ncl')
         missed_payments = st.number_input("Missed Payments", 0, 20, 1, key='ind_mp')
         education = st.selectbox("Education", ["High School","Bachelor","Master","PhD"], key='ind_edu')
-
+ 
     with c2:
         st.markdown("**🔐 Recent Transaction**")
         txn_amount = st.number_input("Txn Amount ($)", 0.01, 50000.0, 890.0, key='ind_ta')
@@ -682,23 +755,23 @@ def page_individual():
         avg_spend = st.number_input("Avg Daily Spend ($)", 10, 5000, 200, key='ind_as')
         num_txn = st.number_input("# Txn Today", 1, 50, 7, key='ind_ntxn')
         foreign = st.selectbox("International?", [0, 1], key='ind_fgn', format_func=lambda x: "Yes" if x else "No")
-
+ 
     if st.button("🔍 Run Full Risk Analysis", use_container_width=True):
         # Loan prediction
         edu_map = {'High School': 0, 'Bachelor': 1, 'Master': 2, 'PhD': 3}
         loan_feat = np.array([[age, income, credit_score, loan_amount, employment_years,
                                debt_to_income, num_credit_lines, missed_payments, edu_map[education]]])
         loan_prob = models['loan_model'].predict_proba(models['loan_scaler'].transform(loan_feat))[0][1]
-
+ 
         # Fraud prediction
         fraud_feat = np.array([[txn_amount, hour, distance, avg_spend, num_txn, foreign]])
         fraud_prob = models['fraud_model'].predict_proba(models['fraud_scaler'].transform(fraud_feat))[0][1]
-
+ 
         overall_risk = (fraud_prob * 0.6 + (1-loan_prob) * 0.4)
-
+ 
         st.markdown("---")
         st.markdown(f"## 📋 Risk Report: {customer_id}")
-
+ 
         col1, col2, col3 = st.columns(3)
         col1.markdown(f"""
         <div class='metric-card'>
@@ -707,7 +780,7 @@ def page_individual():
             </div>
             <div class='metric-label'>Loan Decision ({loan_prob:.1%})</div>
         </div>""", unsafe_allow_html=True)
-
+ 
         col2.markdown(f"""
         <div class='metric-card'>
             <div class='metric-value' style='color:{"#f87171" if fraud_prob>=0.5 else "#6ee7b7"};'>
@@ -715,7 +788,7 @@ def page_individual():
             </div>
             <div class='metric-label'>Txn Verdict ({fraud_prob:.1%})</div>
         </div>""", unsafe_allow_html=True)
-
+ 
         col3.markdown(f"""
         <div class='metric-card'>
             <div class='metric-value' style='color:{"#f87171" if overall_risk>0.5 else "#6ee7b7"};'>
@@ -723,7 +796,7 @@ def page_individual():
             </div>
             <div class='metric-label'>Overall Risk Score</div>
         </div>""", unsafe_allow_html=True)
-
+ 
         # Spider chart
         st.markdown("**📊 Risk Factor Breakdown**")
         fig_bar, ax_bar = plt.subplots(figsize=(7, 3), facecolor='#1e293b')
@@ -745,7 +818,7 @@ def page_individual():
         ax_bar.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#e2e8f0', fontsize=8)
         plt.tight_layout()
         st.pyplot(fig_bar); plt.close()
-
+ 
         # AI Summary
         st.markdown("**💡 AI Summary & Recommendations**")
         summary = f"""
@@ -760,14 +833,14 @@ def page_individual():
         📊 **Overall Profile:** {risk_label(overall_risk)}
         """
         st.markdown(summary)
-
-
+ 
+ 
 def page_model_performance():
     metrics = load_metrics()
     st.markdown("<h1 style='color:#e2e8f0;'>📈 Model Performance Analytics</h1>", unsafe_allow_html=True)
-
+ 
     tab1, tab2 = st.tabs(["💳 Loan Model", "🔐 Fraud Model"])
-
+ 
     with tab1:
         c1, c2, c3, c4 = st.columns(4)
         for col, (k, v) in zip([c1,c2,c3,c4], [
@@ -775,7 +848,7 @@ def page_model_performance():
             ("Precision", metrics['loan']['precision']), ("F1 Score", metrics['loan']['f1'])
         ]):
             col.markdown(f"<div class='metric-card'><div class='metric-value'>{v:.3f}</div><div class='metric-label'>{k}</div></div>", unsafe_allow_html=True)
-
+ 
         c1, c2, c3 = st.columns(3)
         with c1:
             fig = make_confusion_matrix_fig(metrics['loan']['confusion_matrix'], 'Loan Confusion Matrix')
@@ -786,7 +859,7 @@ def page_model_performance():
         with c3:
             fig = make_feature_importance_fig(metrics['loan']['feature_importances'], 'Feature Importances')
             st.pyplot(fig); plt.close()
-
+ 
         st.markdown("""
         <div class='info-box'>
         <b>Algorithm:</b> Random Forest (100 estimators, max depth 8) <br>
@@ -794,7 +867,7 @@ def page_model_performance():
         <b>Best Use:</b> Credit scoring and loan approval with interpretable risk factors
         </div>
         """, unsafe_allow_html=True)
-
+ 
     with tab2:
         c1, c2, c3, c4 = st.columns(4)
         for col, (k, v) in zip([c1,c2,c3,c4], [
@@ -802,7 +875,7 @@ def page_model_performance():
             ("Precision", metrics['fraud']['precision']), ("F1 Score", metrics['fraud']['f1'])
         ]):
             col.markdown(f"<div class='metric-card'><div class='metric-value'>{v:.3f}</div><div class='metric-label'>{k}</div></div>", unsafe_allow_html=True)
-
+ 
         c1, c2, c3 = st.columns(3)
         with c1:
             fig = make_confusion_matrix_fig(metrics['fraud']['confusion_matrix'], 'Fraud Confusion Matrix')
@@ -813,7 +886,7 @@ def page_model_performance():
         with c3:
             fig = make_feature_importance_fig(metrics['fraud']['feature_importances'], 'Feature Importances')
             st.pyplot(fig); plt.close()
-
+ 
         st.markdown("""
         <div class='info-box'>
         <b>Algorithm:</b> Gradient Boosting Classifier (100 estimators, max depth 5)<br>
@@ -821,8 +894,8 @@ def page_model_performance():
         <b>Best Use:</b> Real-time anomaly detection in financial transactions
         </div>
         """, unsafe_allow_html=True)
-
-
+ 
+ 
 def page_about():
     st.markdown("<h1 style='color:#e2e8f0;'>ℹ️ About This Project</h1>", unsafe_allow_html=True)
     st.markdown("""
@@ -873,8 +946,8 @@ def page_about():
     </ul>
     </div>
     """, unsafe_allow_html=True)
-
-
+ 
+ 
 # ─────────────────────────────────────────────
 # MAIN APP
 # ─────────────────────────────────────────────
@@ -882,9 +955,9 @@ def main():
     if not st.session_state.logged_in:
         login_page()
         return
-
+ 
     page = render_sidebar()
-
+ 
     if page == "📊 Dashboard":
         page_dashboard()
     elif page == "💳 Loan Approval":
@@ -899,6 +972,10 @@ def main():
         page_model_performance()
     elif page == "ℹ️ About":
         page_about()
-
+ 
 if __name__ == "__main__":
     main()
+ 
+
+
+
